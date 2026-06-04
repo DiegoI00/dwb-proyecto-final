@@ -1,0 +1,115 @@
+package com.product.api.service;
+
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+
+import com.product.api.dto.in.DtoProductIn;
+import com.product.api.dto.out.DtoProductListOut;
+import com.product.api.dto.out.DtoProductOut;
+import com.product.api.entity.Product;
+import com.product.api.repository.RepoProduct;
+import com.product.common.mapper.MapperProduct;
+import com.product.exception.ApiException;
+
+@Service
+public class SvcProductImp implements SvcProduct {
+
+    @Autowired
+    RepoProduct repo;
+
+    @Autowired
+    MapperProduct mapper;
+
+    @Override
+    public ResponseEntity<List<DtoProductListOut>> getProducts() {
+        try {
+            List<Product> products = repo.findAll();
+            return new ResponseEntity<>(mapper.fromProductList(products), HttpStatus.OK);
+        } catch (DataAccessException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al consultar los productos");
+        }
+    }
+
+    @Override
+    public ResponseEntity<DtoProductOut> getProduct(Integer id) {
+        try {
+            Product product = validateProductId(id);
+            return new ResponseEntity<>(mapper.fromProduct(product), HttpStatus.OK);
+        } catch (DataAccessException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al consultar el producto");
+        }
+    }
+
+    @Override
+    public ResponseEntity<String> createProduct(DtoProductIn in) {
+        try {
+            Product product = mapper.fromDto(in);
+            repo.save(product);
+            return new ResponseEntity<>("El producto ha sido registrado", HttpStatus.CREATED);
+        } catch (DataAccessException e) {
+            String msg = e.getLocalizedMessage();
+            if (msg != null && msg.contains("ux_product_gtin"))
+                throw new ApiException(HttpStatus.CONFLICT, "El gtin del producto ya está registrado");
+            if (msg != null && msg.contains("ux_product_product"))
+                throw new ApiException(HttpStatus.CONFLICT, "El nombre del producto ya está registrado");
+            if (msg != null && msg.contains("fk_product_category"))
+                throw new ApiException(HttpStatus.NOT_FOUND, "El id de categoría no existe");
+
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al registrar el producto");
+        }
+    }
+
+    @Override
+    public ResponseEntity<String> updateProduct(Integer id, DtoProductIn in) {
+        try {
+            validateProductId(id);
+            Product product = mapper.fromDto(id, in);
+            repo.save(product);
+            return new ResponseEntity<>("El producto ha sido actualizado", HttpStatus.OK);
+        } catch (DataAccessException e) {
+            String msg = e.getLocalizedMessage();
+            if (msg != null && msg.contains("ux_product_gtin"))
+                throw new ApiException(HttpStatus.CONFLICT, "El gtin del producto ya está registrado");
+            if (msg != null && msg.contains("ux_product_product"))
+                throw new ApiException(HttpStatus.CONFLICT, "El nombre del producto ya está registrado");
+            if (msg != null && msg.contains("fk_product_category"))
+                throw new ApiException(HttpStatus.NOT_FOUND, "El id de categoría no existe");
+
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al actualizar el producto");
+        }
+    }
+
+    @Override
+    public ResponseEntity<String> enableProduct(Integer id) {
+        try {
+            Product product = validateProductId(id);
+            product.setStatus(1);
+            repo.save(product);
+            return new ResponseEntity<>("El producto ha sido activado", HttpStatus.OK);
+        } catch (DataAccessException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al activar el producto");
+        }
+    }
+
+    @Override
+    public ResponseEntity<String> disableProduct(Integer id) {
+        try {
+            Product product = validateProductId(id);
+            product.setStatus(0);
+            repo.save(product);
+            return new ResponseEntity<>("El producto ha sido desactivado", HttpStatus.OK);
+        } catch (DataAccessException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Error al desactivar el producto");
+        }
+    }
+
+    private Product validateProductId(Integer id) {
+        return repo.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "El id del producto no existe"));
+    }
+}
